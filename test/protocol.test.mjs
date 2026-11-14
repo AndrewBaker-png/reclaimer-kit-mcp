@@ -1,0 +1,44 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+test('official MCP client discovers tools and edits a scenario over stdio', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'reclaimer-protocol-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const kit = path.join(root, 'kit'); await fs.mkdir(kit);
+  await fs.writeFile(path.join(kit, 'test.rkscenario'), JSON.stringify({ format: 2, map: { file: 'base.map', id: 1 }, changes: { moved: [{ kind: 'weapon', index: 1, transform: { position: [1, 2, 3], rotation: [0, 0, 0], scale: 0 } }] } }));
+  const config = path.join(root, 'config.json');
+  await fs.writeFile(config, JSON.stringify({ editor: 'missing.exe', roots: { kit, work: path.join(root, 'work') }, mapRoots: [] }));
+  const transport = new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../src/server.mjs', import.meta.url))], env: { ...process.env, RECLAIMER_MCP_CONFIG: config }, stderr: 'pipe' });
+  let stderr = ''; transport.stderr?.on('data', b => { stderr += b; });
+  const client = new Client({ name: 'reclaimer-test', version: '1.0.0' });
+  t.after(() => client.close());
+  await client.connect(transport);
+  const tools = await client.listTools();
+  assert.equal(tools.tools.length, 14);
+  assert.ok(tools.tools.some(t => t.name === 'add_vehicle_placement'));
+  assert.ok(tools.tools.some(t => t.name === 'compile_scenario'));
+  assert.ok(tools.tools.some(t => t.name === 'render_scene_preview'));
+  assert.ok(tools.tools.some(t => t.name === 'render_asset_preview'));
+  const call = async (name, args = {}) => {
+    const r = await client.callTool({ name, arguments: args });
+    assert.notEqual(r.isError, true, JSON.stringify(r));
+    return JSON.parse(r.content[0].text);
+  };
+  assert.equal((await call('kit_status')).editorExists, false);
+  const invalidPreview = await client.callTool({ name: 'render_asset_preview', arguments: { id: 'kit:test.rkscenario', tag: '../outside' } });
+  assert.equal(invalidPreview.isError, true);
+  const listing = await call('list_projects'); assert.ok(listing.projects.includes('kit:test.rkscenario'));
+  const initial = await call('read_project', { id: 'kit:test.rkscenario' });
+  const result = await call('set_placement_transform', { source: initial.id, expected_sha256: initial.sha256, name: 'moved', kind: 'weapon', index: 1, position: [1, 12.5, 3] });
+  assert.equal((await call('read_project', { id: result.id })).scenario.changes.moved[0].transform.position[1], 12.5);
+  assert.equal((await call('compare_projects', { before: initial.id, after: result.id })).changes.length, 1);
+  const bad = await client.callTool({ name: 'set_placement_transform', arguments: { source: initial.id, expected_sha256: '0'.repeat(64), name: 'stale', kind: 'weapon', index: 1, scale: 1 } });
+  assert.equal(bad.isError, true);
+  assert.equal(stderr, '');
+});

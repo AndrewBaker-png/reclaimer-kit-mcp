@@ -1,0 +1,15 @@
+config.local.json
+projects/
+.npm-cache/
+node_modules/
+.env
+.env.*
+*.log
+*.map
+*.fsb
+*.exe
+*.dll
+*.pem
+*.key
+.DS_Store
+Thumbs.db

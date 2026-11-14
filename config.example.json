@@ -1,0 +1,8 @@
+{
+  "editor": "D:/SteamLibrary/Project Reclaimer/reclaimer-kit-v0.10.3.exe",
+  "roots": {
+    "kit": "C:/Users/YOUR_USERNAME/AppData/Local/ProjectReclaimer/Kit Projects",
+    "work": "C:/Projects/reclaimer-kit-mcp/projects"
+  },
+  "mapRoots": ["C:/Users/YOUR_USERNAME/AppData/Local/ProjectReclaimer/Mods"]
+}
